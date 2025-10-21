@@ -2,26 +2,32 @@ const express = require('express');
 const axios = require('axios');
 const app = express();
 
-// Конфигурация (заполните позже)
+// Конфигурация (для одного API ключа)
 const CONFIG = {
-    BOT_TOKEN: process.env.BOT_TOKEN || '8133681784:AAG5tcJJocTSLLvyGtDjrbEU3KqwXAdEPPo',
-    CHANNEL_USERNAME: process.env.CHANNEL_USERNAME || 'r4llex'
+    BOT_TOKEN: process.env.BOT_TOKEN,
+    CHANNEL_USERNAME: process.env.CHANNEL_USERNAME,
+    LAVA_SECRET_KEY: process.env.LAVA_SECRET_KEY,
+    LAVA_SHOP_ID: process.env.LAVA_SHOP_ID || '1743476453' // можно задать по умолчанию
 };
 
 app.use(express.json());
 
-// Главная страница
 app.get('/', (req, res) => {
-    res.send('✅ Бот работает!');
+    res.send(`
+        <h1>✅ Сервер работает</h1>
+        <p>Lava Shop ID: ${CONFIG.LAVA_SHOP_ID}</p>
+        <p><strong>Webhook URL для Lava:</strong><br>
+        https://ваш-проект.onrender.com/lava-webhook</p>
+    `);
 });
 
-// Webhook от Lava
+// Webhook для Lava
 app.post('/lava-webhook', (req, res) => {
-    console.log('💰 Получен платеж:', req.body);
-    res.send('OK');
+    console.log('💰 Платеж:', req.body);
+    res.json({ status: 'success' });
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Сервер запущен на порту ${PORT}`);
+    console.log('🚀 Сервер запущен');
 });
