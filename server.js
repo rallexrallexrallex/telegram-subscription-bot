@@ -1,14 +1,14 @@
 const express = require('express');
 const axios = require('axios');
 const sqlite3 = require('sqlite3').verbose();
-const crypto = require('crypto'); // Добавляем crypto для подписей
+const crypto = require('crypto');
 
 const app = express();
 
 // Конфигурация Lava
 const LAVA_CONFIG = {
     SECRET_KEY: '2RSVMGXlZOamUFhRKgraq9cbDmVWjzuV1fgOIPuAFGQ7Eeu18vK0yng32vklu6AI',
-    SHOP_ID: 'OvIPxKijsY', // Ваш shop_id из первого скриншота
+    SHOP_ID: 'OvIPxKijsY',
     API_URL: 'https://api.lava.ru/business'
 };
 
@@ -73,9 +73,9 @@ class LavaPayment {
             sum: amount,
             orderId: orderId,
             shopId: this.shopId,
-            hookUrl: `${process.env.RENDER_URL || 'https://your-app.onrender.com'}/lava-webhook`,
-            successUrl: `${process.env.RENDER_URL || 'https://your-app.onrender.com'}/success`,
-            failUrl: `${process.env.RENDER_URL || 'https://your-app.onrender.com'}/fail`,
+            hookUrl: 'https://telegram-subscription-bot-q8m8.onrender.com/lava-webhook',
+            successUrl: 'https://telegram-subscription-bot-q8m8.onrender.com/success',
+            failUrl: 'https://telegram-subscription-bot-q8m8.onrender.com/fail',
             customFields: JSON.stringify(customData),
             expire: 3600
         };
@@ -194,7 +194,7 @@ app.get('/create-test/:plan/:userId', async (req, res) => {
     }
 });
 
-// Webhook от Lava (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+// Webhook от Lava
 app.post('/lava-webhook', async (req, res) => {
     try {
         console.log('💰 Webhook от Lava получен:', JSON.stringify(req.body, null, 2));
@@ -329,3 +329,154 @@ app.get('/subscriptions', (req, res) => {
 // Проверка просроченных подписок
 app.get('/check-expired', (req, res) => {
     checkExpiredSubscriptions();
+    res.send('<p>✅ Проверка запущена</p><a href="/">← Назад</a>');
+});
+
+// Функция расчета даты окончания
+function calculateEndDate(planName) {
+    const now = new Date();
+    switch(planName) {
+        case '1month':
+            return new Date(now.setMonth(now.getMonth() + 1));
+        case '6months':
+            return new Date(now.setMonth(now.getMonth() + 6));
+        case '12months':
+            return new Date(now.setMonth(now.getMonth() + 12));
+        default:
+            return new Date(now.setMonth(now.getMonth() + 1));
+    }
+}
+
+// Добавление в канал
+async function addToChannel(userId, firstName, planName) {
+    try {
+        const url = `https://api.telegram.org/bot${BOT_CONFIG.BOT_TOKEN}/addChatMember`;
+        
+        const response = await axios.post(url, {
+            chat_id: `@${BOT_CONFIG.CHANNEL_USERNAME}`,
+            user_id: parseInt(userId)
+        });
+        
+        console.log('✅ Ответ от Telegram API:', response.data);
+        
+        // Отправляем сообщение пользователю
+        await sendMessage(userId,
+            `🎉 Поздравляем, ${firstName}!\n\n` +
+            `✅ Вы получили доступ к закрытому каналу: @${BOT_CONFIG.CHANNEL_USERNAME}\n\n` +
+            `💎 Тариф: ${getPlanText(planName)}\n` +
+            `⏰ Срок доступа: ${getDurationText(planName)}\n\n` +
+            `💎 Спасибо за подписку!`
+        );
+        
+        console.log(`✅ Пользователь ${userId} добавлен в канал`);
+        
+    } catch (error) {
+        console.error('❌ Ошибка добавления в канал:', error.response?.data);
+        
+        // Отправляем сообщение об ошибке пользователю
+        await sendMessage(userId,
+            `❌ Произошла ошибка при добавлении в канал.\n\n` +
+            `📞 Свяжитесь с администратором: @SanjarYunusov_bot\n\n` +
+            `Ваш ID: ${userId}`
+        );
+    }
+}
+
+// Удаление из канала
+async function removeFromChannel(userId) {
+    try {
+        const url = `https://api.telegram.org/bot${BOT_CONFIG.BOT_TOKEN}/banChatMember`;
+        
+        await axios.post(url, {
+            chat_id: `@${BOT_CONFIG.CHANNEL_USERNAME}`,
+            user_id: parseInt(userId),
+            revoke_messages: true
+        });
+        
+        console.log(`✅ Пользователь ${userId} удален из канала`);
+        
+    } catch (error) {
+        console.error('❌ Ошибка удаления:', error.response?.data);
+    }
+}
+
+// Отправка сообщения
+async function sendMessage(chatId, text) {
+    try {
+        const url = `https://api.telegram.org/bot${BOT_CONFIG.BOT_TOKEN}/sendMessage`;
+        
+        await axios.post(url, {
+            chat_id: chatId,
+            text: text,
+            parse_mode: 'HTML'
+        });
+    } catch (error) {
+        console.error('Ошибка отправки сообщения пользователю', chatId);
+    }
+}
+
+// Текст для тарифа
+function getPlanText(planName) {
+    switch(planName) {
+        case '1month': return '1 месяц';
+        case '6months': return '6 месяцев';
+        case '12months': return '12 месяцев';
+        default: return planName;
+    }
+}
+
+// Текст о сроке доступа
+function getDurationText(planName) {
+    switch(planName) {
+        case '1month': return '1 месяц';
+        case '6months': return '6 месяцев';
+        case '12months': return '12 месяцев';
+        default: return '1 месяц';
+    }
+}
+
+// Проверка просроченных подписок
+function checkExpiredSubscriptions() {
+    db.all(
+        `SELECT * FROM subscriptions WHERE datetime(end_date) < datetime('now') AND status = 'active'`,
+        async (err, rows) => {
+            if (err) {
+                console.error('❌ Ошибка проверки:', err);
+                return;
+            }
+            
+            console.log(`🔍 Проверка подписок: ${rows.length} просроченных`);
+            
+            for (const sub of rows) {
+                await removeFromChannel(sub.telegram_id);
+                
+                db.run(
+                    `UPDATE subscriptions SET status = 'expired' WHERE telegram_id = ?`,
+                    [sub.telegram_id],
+                    function(err) {
+                        if (err) console.error('Ошибка обновления статуса:', err);
+                    }
+                );
+                
+                console.log(`❌ Удален: ${sub.telegram_id} (${sub.plan})`);
+            }
+        }
+    );
+}
+
+// Проверяем каждые 6 часов
+setInterval(checkExpiredSubscriptions, 6 * 60 * 60 * 1000);
+
+// Первая проверка через 1 минуту после запуска
+setTimeout(checkExpiredSubscriptions, 60000);
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log(`🚀 Сервер запущен на порту ${PORT}`);
+    console.log(`📢 Канал: @${BOT_CONFIG.CHANNEL_USERNAME}`);
+    console.log(`🤖 Бот: Настроен`);
+    console.log(`💾 База: SQLite`);
+    console.log(`💰 Lava API: Настроено`);
+    console.log(`⏰ Автопроверка: каждые 6 часов`);
+    console.log(`🌐 Webhook URL: https://telegram-subscription-bot-q8m8.onrender.com/lava-webhook`);
+});
